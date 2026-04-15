@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+const nodemailer = require("nodemailer");
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -102,19 +103,24 @@ async function main() {
 
   const report = response.output_text;
 
-  const res = await fetch(process.env.GOOGLE_CHAT_WEBHOOK_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_FROM,
+      pass: process.env.GMAIL_APP_PASSWORD,
     },
-    body: JSON.stringify({ text: report }),
   });
 
-  if (!res.ok) {
-    throw new Error(`Google Chat webhook failed: ${res.status} ${await res.text()}`);
-  }
+  const today = new Date().toISOString().slice(0, 10);
 
-  console.log("Report sent successfully");
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM,
+    to: process.env.EMAIL_TO,
+    subject: `競合モニタリングレポート ${today}`,
+    text: report,
+  });
+
+  console.log("Report emailed successfully");
 }
 
 main().catch((err) => {
