@@ -1,11 +1,9 @@
 const OpenAI = require("openai");
-const { IncomingWebhook } = require("@slack/webhook");
+const nodemailer = require("nodemailer");
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-
-const webhook = new IncomingWebhook(process.env.SLACK_WEBHOOK_URL);
 
 async function main() {
   const now = new Date().toISOString();
@@ -30,7 +28,6 @@ async function main() {
 --------------------------------------------
 - Udemy Business
 - LinkedIn Learning
-- LinkedIn Career Hub
 - LinkedIn Career Hub
 - Schoo for Business
 - グロービス学び放題
@@ -159,20 +156,25 @@ async function main() {
   const report = response.output_text;
   const today = new Date().toISOString().slice(0, 10);
 
-  const slackText = `*競合モニタリングレポート ${today}*\n\n${report}`;
-
-  const slackResponse = await fetch(process.env.SLACK_WEBHOOK_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_FROM,
+      pass: process.env.GMAIL_APP_PASSWORD,
     },
-    body: JSON.stringify({
-      text: slackText,
-    }),
   });
 
-  if (!slackResponse.ok) {
-    throw new Error(`Slack通知に失敗しました: ${slackResponse.status} ${await slackResponse.text()}`);
-  }
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM,
+    to: process.env.EMAIL_TO,
+    subject: `競合モニタリングレポート ${today}`,
+    text: report,
+  });
 
-  console.log("Report sent to Slack successfully");
+  console.log("Report emailed successfully");
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
