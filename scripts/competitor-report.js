@@ -159,14 +159,20 @@ async function main() {
   const report = response.output_text;
   const today = new Date().toISOString().slice(0, 10);
 
-  await webhook.send({
-    text: `*競合モニタリングレポート ${today}*\n\n${report}`,
+  const slackText = `*競合モニタリングレポート ${today}*\n\n${report}`;
+
+  const slackResponse = await fetch(process.env.SLACK_WEBHOOK_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text: slackText,
+    }),
   });
 
-  console.log("Report sent to Slack successfully");
-}
+  if (!slackResponse.ok) {
+    throw new Error(`Slack通知に失敗しました: ${slackResponse.status} ${await slackResponse.text()}`);
+  }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+  console.log("Report sent to Slack successfully");
