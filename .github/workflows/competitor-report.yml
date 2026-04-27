@@ -10,7 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -22,7 +24,7 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: npm install openai
+        run: npm install openai nodemailer
 
       - name: Run report
         run: node scripts/competitor-report.js
