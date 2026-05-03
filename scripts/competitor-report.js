@@ -403,7 +403,7 @@ URLはクリック可能なaタグにすること。
 `;
 
   const response = await client.responses.create({
-    model: "gpt-5.4",
+    model: process.env.REPORT_MODEL || "gpt-5.4 mini",
     tools: [{ type: "web_search" }],
     input: prompt,
   });
