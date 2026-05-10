@@ -17,6 +17,15 @@ const TARGETS = [
     displayName: "LinkedIn Learning",
     searchName: "LinkedIn Learning",
     competitorType: "competitor",
+    searchScope:
+      "LinkedIn Learning公式コース、公式ブログ、公式ニュース、公式コース一覧、AI・スキル・法人学習に関係する更新",
+    adoptionScope:
+      "法人向け学習、企業研修、AI人材育成、スキル可視化、キャリア支援、リスキリングに示唆があるもの",
+    preferredUrlPatterns: [
+      "linkedin.com/learning/",
+      "linkedin.com/business/learning/",
+      "ad.linkedin.com/learning/",
+    ],
     sourceHints: [
       "LinkedIn Learning official courses",
       "LinkedIn Learning official blog",
@@ -30,6 +39,15 @@ const TARGETS = [
     displayName: "LinkedIn Career Hub",
     searchName: "LinkedIn Career Hub",
     competitorType: "competitor",
+    searchScope:
+      "LinkedIn Career Hub公式情報、LinkedIn公式ブログ、スキル、キャリア支援、人材育成に関係するLinkedIn公式発表",
+    adoptionScope:
+      "法人向け学習、キャリア支援、スキル可視化、人材育成、従業員のキャリア開発に示唆があるもの",
+    preferredUrlPatterns: [
+      "linkedin.com/business/",
+      "linkedin.com/pulse/",
+      "linkedin.com/blog/",
+    ],
     sourceHints: [
       "LinkedIn Career Hub official",
       "LinkedIn Career Hub skills",
@@ -40,14 +58,26 @@ const TARGETS = [
   {
     id: "schoo",
     displayName: "Schoo",
-    searchName: "Schoo for Business Schoo",
+    searchName: "Schoo Schoo for Business スクー",
     competitorType: "competitor",
+    searchScope:
+      "Schoo公式全体、Schoo公式ニュース、Schoo公式お知らせ、Schoo特集、無料公開授業、Schoo for Business関連ページ",
+    adoptionScope:
+      "法人向け学習、企業研修、スキル習得、思考整理、マネジメント、DX、AI、人材育成、学習継続、セルフマネジメントに示唆があるもの",
+    preferredUrlPatterns: [
+      "schoo.jp/news/",
+      "schoo.jp/classes/",
+      "schoo.jp/course/",
+      "schoo.jp/feature/",
+      "schoo.jp/biz/",
+    ],
     sourceHints: [
       "Schoo official news",
+      "Schoo お知らせ 2026年5月",
+      "Schoo 無料公開授業 2026年5月",
+      "Schoo 特集 2026年5月",
       "Schoo for Business official",
-      "schoo.jp/news",
-      "Schoo 2026年5月 お知らせ",
-      "Schoo 法人向け 学習",
+      "site:schoo.jp/news Schoo 2026年5月",
     ],
   },
   {
@@ -55,6 +85,17 @@ const TARGETS = [
     displayName: "グロービス学び放題",
     searchName: "グロービス学び放題 GLOBIS 学び放題 知見録",
     competitorType: "competitor",
+    searchScope:
+      "GLOBIS公式全体、グロービス学び放題、GLOBIS学び放題×知見録、GLOBIS知見録、コースページ、新着コンテンツ、音声コンテンツ、AIワークシフト",
+    adoptionScope:
+      "法人向け学習、ビジネススキル、AI、DX、人材育成、リスキリング、マネジメント、コンテンツ設計に示唆があるもの",
+    preferredUrlPatterns: [
+      "globis.jp/courses/",
+      "globis.jp/article/",
+      "globis.jp/feature/",
+      "globis.jp/learn-content/",
+      "globis.jp/explore-content/",
+    ],
     sourceHints: [
       "グロービス学び放題 公式",
       "GLOBIS学び放題 公式",
@@ -62,6 +103,7 @@ const TARGETS = [
       "globis.jp/courses",
       "globis.jp 2026年5月 新着",
       "GLOBIS AI 2026年5月",
+      "site:globis.jp/courses 2026年5月 AI",
     ],
   },
   {
@@ -69,6 +111,15 @@ const TARGETS = [
     displayName: "Udemy Business",
     searchName: "Udemy Business",
     competitorType: "self_reference",
+    searchScope:
+      "Udemy Business公式ニュース、公式ブログ、プロダクトアップデート、法人向け学習に関係する公式情報",
+    adoptionScope:
+      "自社参考として、競合ニュースの理解に必要なものだけ",
+    preferredUrlPatterns: [
+      "business.udemy.com/",
+      "udemy.com/blog/",
+      "research.udemy.com/",
+    ],
     sourceHints: [
       "Udemy Business official news",
       "Udemy Business blog",
@@ -88,7 +139,6 @@ const CATEGORY_LIST = [
 ];
 
 const IMPORTANCE_LIST = ["高", "中", "低"];
-
 const EVIDENCE_RANK_LIST = ["A", "B", "C"];
 
 /**
@@ -190,6 +240,14 @@ function isRootOrWeakUrl(url) {
   }
 }
 
+function matchesPreferredUrlPattern(url, target) {
+  const normalizedUrl = normalizeText(url).toLowerCase();
+
+  return target.preferredUrlPatterns.some((pattern) =>
+    normalizedUrl.includes(pattern.toLowerCase())
+  );
+}
+
 function isWithinPeriod(publishedAtUtc, startDate, endDate) {
   const publishedAt = new Date(publishedAtUtc);
 
@@ -224,7 +282,6 @@ function shouldExcludeCompany(value) {
 
 function importanceScore(value) {
   const normalized = normalizeImportance(value);
-
   if (normalized === "高") return 3;
   if (normalized === "中") return 2;
   return 1;
@@ -232,7 +289,6 @@ function importanceScore(value) {
 
 function evidenceScore(value) {
   const rank = normalizeEvidenceRank(value);
-
   if (rank === "A") return 3;
   if (rank === "B") return 2;
   return 1;
@@ -297,11 +353,6 @@ function validateCandidate(item, target, startDate, endDate) {
     rejectReasons.push("evidence rank C");
   }
 
-  /**
-   * トップページだけの出典は弱いので除外。
-   * ただし、Bランクで date_evidence_url があり、
-   * primary_url が個別ページなら採用可。
-   */
   if (primaryUrl && isRootOrWeakUrl(primaryUrl)) {
     rejectReasons.push("weak primary_url");
   }
@@ -315,6 +366,7 @@ function validateCandidate(item, target, startDate, endDate) {
 function normalizeCandidate(item, target) {
   const primaryUrl = normalizeText(item.primary_url || item.url);
   const dateEvidenceUrl = normalizeText(item.date_evidence_url);
+  const preferredUrlMatched = matchesPreferredUrlPattern(primaryUrl, target);
 
   return {
     target_id: target.id,
@@ -341,6 +393,7 @@ function normalizeCandidate(item, target) {
     japan_market_impact: normalizeText(item.japan_market_impact),
     japan_market_impact_reason: normalizeText(item.japan_market_impact_reason),
     source_host: getHostname(primaryUrl),
+    preferred_url_matched: preferredUrlMatched,
   };
 }
 
@@ -388,6 +441,40 @@ Markdown、コードブロック、説明文、前置き、後書きは出力し
 他社のニュースを混ぜないでください。
 
 --------------------------------------------
+■ 探索範囲
+--------------------------------------------
+以下の範囲を広く探索してください。
+
+${target.searchScope}
+
+重要：
+探索範囲は広く取ってください。
+${target.displayName}専用ページだけに限定しないでください。
+公式ニュース、公式お知らせ、公式コースページ、公式特集、公式配信ページ、公式一覧ページに対象期間内の更新があるか確認してください。
+
+--------------------------------------------
+■ 採用範囲
+--------------------------------------------
+候補として残すのは、以下に示唆があるものです。
+
+${target.adoptionScope}
+
+重要：
+探索は広く、採用は上記の業務示唆で絞ってください。
+たとえば、Schooの場合はSchoo for Business専用ニュースでなくても、法人向け学習・企業研修・スキル習得・思考整理・マネジメント・DX・AI・人材育成に示唆があれば候補に含めてください。
+GLOBISの場合も、グロービス学び放題専用ニュースでなくても、GLOBIS公式のコース・知見録・新着コンテンツで法人向け学習に示唆があれば候補に含めてください。
+
+--------------------------------------------
+■ 優先URLパターン
+--------------------------------------------
+可能な限り、以下に合う個別ページURLを primary_url に使ってください。
+
+${target.preferredUrlPatterns.map((pattern) => `- ${pattern}`).join("\n")}
+
+トップページだけ、一覧ページだけ、検索結果ページだけを primary_url にしないでください。
+ただし、Bランクの場合は、date_evidence_url に公式一覧ページや公式トップページを入れてよいです。
+
+--------------------------------------------
 ■ 探索ヒント
 --------------------------------------------
 以下の観点を使って、公式情報を中心に確認してください。
@@ -404,6 +491,8 @@ ${target.sourceHints.map((hint) => `- ${hint}`).join("\n")}
 - 講座
 - 授業
 - コース
+- 特集
+- 無料公開
 - AI
 - リスキリング
 - 法人向け
@@ -411,6 +500,8 @@ ${target.sourceHints.map((hint) => `- ${hint}`).join("\n")}
 - キャリア
 - 企業研修
 - 生成AI
+- マネジメント
+- DX
 
 --------------------------------------------
 ■ 候補抽出の考え方
@@ -635,67 +726,6 @@ Udemy Business向け
 ${JSON.stringify(verifiedItems, null, 2)}
 
 --------------------------------------------
-■ 調査対象
---------------------------------------------
-
-【競合として扱う対象】
-- LinkedIn Learning
-- LinkedIn Career Hub
-- Schoo for Business
-- グロービス学び放題
-
-【自社として扱う対象】
-- Udemy Business
-
-Udemy Businessは競合として扱わないでください。
-掲載する場合は「自社参考」と明記し、競合ニュースと混同しないようにしてください。
-ただし、Udemy Business専用の独立セクションは作らないでください。
-
-【除外対象】
-- SIGNATE
-
-SIGNATEに関するニュースは出力しないでください。
-
---------------------------------------------
-■ 文章トーン
---------------------------------------------
-
-文章は、少し口語体でよいです。
-ただし、社内メールとして失礼にならないトーンにしてください。
-
-避ける文体：
-- 監査レポートのように硬い文章
-- 箇条書きだけの無機質な文章
-- 「以下の通り整理します」のような事務的な始まり
-- 過度に煽る表現
-- 根拠のないストーリー化
-- 競合を過度に持ち上げる表現
-- 断定しすぎる表現
-- 評価表のような無機質な表現
-
-本文中では、以下のような評価表っぽい表現を使わないでください。
-
-- 競争インパクトは中程度です
-- 競争インパクトは低めです
-- 重要度は低めです
-- 重要度は中程度です
-- 直接的な競争インパクトは限定的です
-
-重要度の高低はラベルに任せてください。
-本文では、なぜ気になるのか、どの場面で参考になるのかを自然な言葉で説明してください。
-
---------------------------------------------
-■ 見出しルール
---------------------------------------------
-
-冒頭の見出しは、読者が「どういうこと？」と思って読み進めたくなる問い・仮説・一言でよいです。
-
-一方で、「今週、気になった競合の動き」に掲載する各ニュースの見出しは、必ずファクトベースにしてください。
-見出しだけを読んでも、何が起きたかが分かるようにしてください。
-
-読み物らしさは、ニュース見出しではなく、冒頭・今週の流れ・ここが気になる・最後の一言で出してください。
-
---------------------------------------------
 ■ メール構成
 --------------------------------------------
 
@@ -711,29 +741,35 @@ SIGNATEに関するニュースは出力しないでください。
 検証済みニュースが0件の場合は、「今週、気になった競合の動き」にはニュースが少なかったことを短く書いてください。
 
 --------------------------------------------
-■ 各セクションの内容
+■ 文章トーン
 --------------------------------------------
 
-1. 冒頭：今週のひとこと
+少し口語体で、社内メールとして失礼にならないトーンにしてください。
 
-最初に、今週の競合の動きを表す短い問い・仮説・一言を書いてください。
+避ける表現：
+- 競争インパクトは中程度です
+- 競争インパクトは低めです
+- 重要度は低めです
+- 重要度は中程度です
+- 直接的な競争インパクトは限定的です
 
-ニュースの羅列はしないでください。
-「今週の空気感」「なぜ見るべきか」「社内メンバーにとっての意味」を2〜4文で書いてください。
+重要度の高低はラベルに任せてください。
+本文では、なぜ気になるのか、どの場面で参考になるのかを自然な言葉で説明してください。
 
-対象期間内の重要ニュースが少ない場合は、無理に盛り上げず、正直に書いてください。
+--------------------------------------------
+■ 見出しルール
+--------------------------------------------
 
-2. 今週の流れ
+冒頭の見出しは、読者が読み進めたくなる問い・仮説・一言でよいです。
 
-ニュースを個別に並べる前に、今週採用したニュースに共通する流れを1〜2文で説明してください。
-検証済みニュースが1件以下の場合は、このセクションは省略してよいです。
+一方で、「今週、気になった競合の動き」に掲載する各ニュースの見出しは、必ずファクトベースにしてください。
+見出しだけを読んでも、何が起きたかが分かるようにしてください。
 
-3. 今週、気になった競合の動き
+--------------------------------------------
+■ 各ニュースの構成
+--------------------------------------------
 
-競合の主要トピックを最大3件まで掲載してください。
-このセクションには、Udemy Businessを競合として含めてはいけません。
-
-各トピックは、以下の構成で短くまとめてください。
+各トピックは以下の構成で短くまとめてください。
 
 - ファクトベースの見出し
 - 対象企業
@@ -745,39 +781,7 @@ SIGNATEに関するニュースは出力しないでください。
 - ここが気になる
 - 出典URL
 
-「何が起きたか」は事実のみを書いてください。
-
-「ここが気になる」では、区分と重要度を踏まえながら、なぜ社内メンバーが気にした方がよいのかを短く書いてください。
-
 1トピックあたりの分量は、180〜260字程度を目安にしてください。
-
-4. 今週、現場で使うならこの一言
-
-最初に、読者がそのまま商談・企画・社内会話で使える短いフレーズを1つ置いてください。
-
-例：
-- 「AI研修って、どの業務で成果を出すためにやりたいんでしたっけ？」
-- 「その学習テーマ、忙しい人が最初の5分で入れる形になっていますか？」
-- 「AIを学ぶ話ではなく、AIを使う業務を決める話から始めませんか？」
-- 「このテーマ、受講して終わりではなく、現場でどう使うかまで話せていますか？」
-
-その後、必要に応じて営業・マーケティング・商品開発・コンテンツ作成のうち、今週のニュースから実際に使えそうな示唆だけを書いてください。
-
-全チームを必ず埋める必要はありません。
-該当が薄いチームは書かないでください。
-各チーム1行までにしてください。
-
-検証済みニュースが0件の場合は、無理に示唆を作らないでください。
-その場合は、「今週は大きな動きが少なかったため、商談や企画に直結する一言は控えめです」のように短く書いてください。
-
-5. 出典
-
-実際に本文で使ったURLのみを掲載してください。
-サービス名ごとに簡潔に一覧化してください。
-URLはクリック可能なaタグにしてください。
-
-Bランクのニュースの場合は、個別ページURLと日付確認URLの両方を掲載してよいです。
-ただし、同じURLを重複して掲載しないでください。
 
 --------------------------------------------
 ■ 出力しないセクション
@@ -890,29 +894,16 @@ HTMLデザインは以下を守ってください。
 出力前に以下を確認してください。
 
 - HTMLのみで出力している
-- Markdownやコードブロックを使っていない
 - 検証済みニュース以外の情報を追加していない
 - 古いニュースで情報量を増やしていない
 - 主要トピックは最大3件に絞っている
 - 各主要トピックにニュース区分と重要度が付いている
-- 区分は、テーマ名ではなく実際の発表内容に基づいている
-- コンテンツ公開と新機能追加を同じ重みにしていない
-- AI関連というだけで重要度を過度に高くしていない
-- 各判断に短い根拠がある
 - 事実と解釈が混ざっていない
 - 根拠のない推測を書いていない
 - 情報が少ない場合に無理な示唆を作っていない
 - SIGNATEを掲載していない
 - Udemy Businessを競合として扱っていない
-- 日本市場への影響は、Udemy BusinessまたはLinkedIn関連の場合のみ出力している
-- Schoo for Business、グロービス学び放題に対して日本影響ラベルを原則出力していない
-- LinkedIn関連ニュースでは、LinkedIn全体 / LinkedIn Learning / LinkedIn Career Hub の違いが明記されている
-- LinkedIn関連ニュースでは、Udemy Businessとの競争関係と日本市場への影響を分けて書いている
-- 本文中で「競争インパクトは中程度です」「競争インパクトは低めです」「重要度は低めです」のような評価表っぽい表現を使っていない
-- 「今週、現場で使うならこの一言」は、そのまま会話で使える短いフレーズになっている
-- チーム別示唆は行動に近い内容だけに絞っている
 - 出典URLがある情報だけを掲載している
-- メールとして3分程度で概要を理解できる
 
 ############################################
 最終結果のみHTMLで出力せよ
@@ -1003,11 +994,17 @@ function validateAndNormalizeAllCandidates({
   const deduped = dedupeCandidates(accepted);
 
   const sorted = deduped.sort((a, b) => {
-    const evidenceDiff = evidenceScore(b.evidence_rank) - evidenceScore(a.evidence_rank);
+    const evidenceDiff =
+      evidenceScore(b.evidence_rank) - evidenceScore(a.evidence_rank);
     if (evidenceDiff !== 0) return evidenceDiff;
 
-    const importanceDiff = importanceScore(b.importance) - importanceScore(a.importance);
+    const importanceDiff =
+      importanceScore(b.importance) - importanceScore(a.importance);
     if (importanceDiff !== 0) return importanceDiff;
+
+    if (b.preferred_url_matched !== a.preferred_url_matched) {
+      return b.preferred_url_matched ? 1 : -1;
+    }
 
     return new Date(b.published_at_utc) - new Date(a.published_at_utc);
   });
@@ -1019,10 +1016,6 @@ function validateAndNormalizeAllCandidates({
 }
 
 function selectFinalItems(candidates, maxItems = 3) {
-  /**
-   * 自社参考は、競合ニュースが少ない場合のみ候補に残す。
-   * 通常は競合ニュースを優先する。
-   */
   const competitorItems = candidates.filter(
     (item) => item.competitor_type === "competitor"
   );
