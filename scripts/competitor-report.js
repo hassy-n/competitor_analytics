@@ -11,11 +11,11 @@ const client = new OpenAI({
  * =========================
  *
  * 推奨:
- * SEARCH_MODEL=gpt-5.4
- * HTML_MODEL=gpt-5.4-mini
+ * SEARCH_MODEL=gpt-5.5
+ * HTML_MODEL=gpt-5.5
  *
- * 候補抽出は検索・判断が難しいため良いモデルを使う。
- * HTML生成は検証済み候補だけを整形するため mini でもよい。
+ * 候補抽出は検索・日付確認・出典評価が難しいため良いモデルを使う。
+ * HTML生成も、読み物としての自然さを重視するなら gpt-5.5 推奨。
  */
 
 const TARGETS = [
@@ -45,6 +45,12 @@ const TARGETS = [
       "site:linkedin.com/learning Japanese LinkedIn Learning AI",
       "site:jp.linkedin.com/learning/courses LinkedIn Learning 日本語",
     ],
+    recoveryHints: [
+      "jp.linkedin.com/learning/courses を中心に確認する",
+      "LinkedIn Learningの日本語コース一覧を確認する",
+      "日本語ページ、リリース日、日本語対応が確認できるものを優先する",
+      "英語のみ、または日本語対応未確認のコースは候補として出してもよいが、japanese_availability は未確認にする",
+    ],
     requiresJapaneseAvailability: true,
   },
   {
@@ -66,6 +72,9 @@ const TARGETS = [
       "LinkedIn Career Hub skills",
       "LinkedIn Career Hub learning",
       "LinkedIn Career Hub workforce",
+    ],
+    recoveryHints: [
+      "LinkedIn公式情報からCareer Hub、skills、career developmentに関係する情報を確認する",
     ],
     requiresJapaneseAvailability: false,
   },
@@ -92,6 +101,13 @@ const TARGETS = [
       "Schoo 特集 2026年5月",
       "Schoo for Business official",
       "site:schoo.jp/news Schoo 2026年5月",
+    ],
+    recoveryHints: [
+      "schoo.jp/news/ 配下の個別ニュースを中心に確認する",
+      "Schoo for Business専用ページに限定しない",
+      "Schoo公式ニュース、無料公開授業、特集、お知らせを確認する",
+      "思考整理、セルフケア、マネジメント、DX、AI、人材育成、企業研修に示唆があるものを候補にする",
+      "primary_url には schoo.jp/news/ 配下の個別ニュースURLを優先する",
     ],
     requiresJapaneseAvailability: false,
   },
@@ -121,6 +137,12 @@ const TARGETS = [
       "site:globis.jp/courses 2026年5月 AI",
       "site:globis.jp/article 2026年5月 グロービス",
     ],
+    recoveryHints: [
+      "globis.jp/courses/ の新着コースを確認する",
+      "globis.jp/article/ の新着記事を確認する",
+      "GLOBIS学び放題×知見録、AIワークシフト、音声コンテンツを確認する",
+      "個別ページに日付が弱い場合は、公式一覧ページで同一タイトルと日付を確認できればBランクにする",
+    ],
     requiresJapaneseAvailability: false,
   },
   {
@@ -142,8 +164,17 @@ const TARGETS = [
       "Udemy Business blog",
       "Udemy Business product update",
     ],
+    recoveryHints: [
+      "Udemy Business公式ニュース、ブログ、プロダクトアップデートを確認する",
+    ],
     requiresJapaneseAvailability: false,
   },
+];
+
+const REQUIRED_RECOVERY_TARGET_IDS = [
+  "linkedin_learning",
+  "schoo",
+  "globis",
 ];
 
 const EXCLUDED_COMPANIES = ["SIGNATE", "signate", "ＳＩＧＮＡＴＥ"];
@@ -302,7 +333,7 @@ function normalizeJapaneseAvailability(value, target) {
   const normalized = normalizeText(value);
 
   if (!target.requiresJapaneseAvailability) {
-    return normalized || "不要";
+    return "";
   }
 
   return normalized || "未確認";
@@ -379,6 +410,12 @@ function dedupeCandidates(candidates) {
   return result;
 }
 
+/**
+ * =========================
+ * 検証・正規化
+ * =========================
+ */
+
 function validateCandidate(item, target, startDate, endDate) {
   const rejectReasons = [];
 
@@ -423,23 +460,17 @@ function validateCandidate(item, target, startDate, endDate) {
     rejectReasons.push("outside period");
   }
 
-  /**
-   * 採用はA/Bのみ。
-   * ただし候補抽出段階ではCも出させて、ログで確認できるようにしている。
-   */
+  // 最終採用はA/Bのみ。Cは候補ログ用。
   if (evidenceRank === "C") {
     rejectReasons.push("evidence rank C");
   }
 
+  // トップページ・弱いURLだけの候補は採用しない。
   if (primaryUrl && isRootOrWeakUrl(primaryUrl)) {
     rejectReasons.push("weak primary_url");
   }
 
-  /**
-   * LinkedIn Learning専用：
-   * 日本語対応が確認できるコンテンツだけを採用する。
-   * 候補抽出段階では未確認も出させ、ここで落とす。
-   */
+  // LinkedIn Learning専用: 日本語対応が確認できるものだけ採用。
   if (target.requiresJapaneseAvailability) {
     if (!VALID_JAPANESE_AVAILABILITY.includes(japaneseAvailability)) {
       rejectReasons.push("missing Japanese availability");
@@ -448,6 +479,32 @@ function validateCandidate(item, target, startDate, endDate) {
     if (!japaneseAvailabilityEvidence) {
       rejectReasons.push("missing Japanese availability evidence");
     }
+  }
+
+  if (target.id === "schoo") {
+    console.log("Schoo validation check:", {
+      title,
+      company,
+      primaryUrl,
+      dateEvidenceUrl,
+      publishedAtUtc,
+      evidenceRank,
+      rejectReasons,
+    });
+  }
+
+  if (target.id === "linkedin_learning") {
+    console.log("LinkedIn Learning validation check:", {
+      title,
+      company,
+      primaryUrl,
+      dateEvidenceUrl,
+      publishedAtUtc,
+      evidenceRank,
+      japaneseAvailability,
+      japaneseAvailabilityEvidence,
+      rejectReasons,
+    });
   }
 
   return {
@@ -460,6 +517,7 @@ function normalizeCandidate(item, target) {
   const primaryUrl = normalizeText(item.primary_url || item.url);
   const dateEvidenceUrl = normalizeText(item.date_evidence_url);
   const preferredUrlMatched = matchesPreferredUrlPattern(primaryUrl, target);
+  const isLinkedInLearning = target.id === "linkedin_learning";
 
   return {
     target_id: target.id,
@@ -476,13 +534,12 @@ function normalizeCandidate(item, target) {
     date_evidence_url: dateEvidenceUrl,
     date_evidence: normalizeText(item.date_evidence),
     content_evidence: normalizeText(item.content_evidence),
-    japanese_availability: normalizeJapaneseAvailability(
-      item.japanese_availability,
-      target
-    ),
-    japanese_availability_evidence: normalizeText(
-      item.japanese_availability_evidence
-    ),
+    japanese_availability: isLinkedInLearning
+      ? normalizeJapaneseAvailability(item.japanese_availability, target)
+      : "",
+    japanese_availability_evidence: isLinkedInLearning
+      ? normalizeText(item.japanese_availability_evidence)
+      : "",
     source_type: normalizeText(item.source_type || "不明"),
     what_happened: normalizeText(item.what_happened),
     why_it_matters: normalizeText(item.why_it_matters),
@@ -495,6 +552,19 @@ function normalizeCandidate(item, target) {
     source_host: getHostname(primaryUrl),
     preferred_url_matched: preferredUrlMatched,
   };
+}
+
+function sanitizeItemsForHtml(items) {
+  return items.map((item) => {
+    const cloned = { ...item };
+
+    if (cloned.target_id !== "linkedin_learning") {
+      cloned.japanese_availability = "";
+      cloned.japanese_availability_evidence = "";
+    }
+
+    return cloned;
+  });
 }
 
 /**
@@ -721,14 +791,6 @@ category は、必ず以下のいずれかにしてください。
 
 区分は、テーマ名ではなく「実際に何が発表・公開・更新されたのか」で判断してください。
 
-例：
-- AI活用の新講座公開 → コンテンツの公開
-- 新しい授業公開 → コンテンツの公開
-- AIレコメンド機能の追加 → 新機能の追加
-- AI人材育成ウェビナー開催 → イベント、ニュース
-- AI研修会社との協業発表 → パートナーシップ
-- AI事業方針の発表 → その他
-
 --------------------------------------------
 ■ 重要度
 --------------------------------------------
@@ -738,47 +800,6 @@ importance は、必ず以下のいずれかにしてください。
 - 高
 - 中
 - 低
-
-判断基準：
-
-【高】
-- 新機能追加で、プロダクト比較や顧客体験に直接影響する
-- パートナーシップで、販路・顧客基盤・提供価値・信頼性が広がる可能性がある
-- 価格、プラン、導入支援、管理機能、スキル可視化、AI機能に関わる
-- 営業提案、比較トーク、商品戦略、マーケティング戦略、コンテンツ戦略に影響する
-
-【中】
-- コンテンツ公開だが、法人顧客の関心が高いテーマである
-- イベントやニュースだが、競合の訴求軸や市場の関心が見える
-- 既存サービスの強化や導入事例の公開である
-- AI、スキル可視化、キャリア支援、人材データ活用など中長期の競争軸に関係する
-
-【低】
-- 小規模なコンテンツ公開
-- 軽微なキャンペーン
-- 一般的なお知らせ
-- 単発イベントの告知
-- Udemy Businessとの競争関係が弱い
-- 業務上の示唆が薄い
-
-注意：
-「AI」「リスキリング」「スキル可視化」など重要テーマを含んでいても、単なるコンテンツ公開であれば原則として高にしないでください。
-一方で、コンテンツ公開であっても、競合のポジショニング変化や顧客ニーズの変化が明確に見える場合は中として扱ってよいです。
-
---------------------------------------------
-■ LinkedIn関連ニュースの扱い
---------------------------------------------
-
-対象がLinkedIn関連の場合は、以下を明確にしてください。
-
-- LinkedIn全体の話か
-- LinkedIn Learningの話か
-- LinkedIn Career Hubの話か
-- Udemy Businessとの競争関係は強いか、弱いか
-- 日本市場への影響
-- その判断根拠
-
-LinkedInの採用、広告、SNS機能、一般的な雇用市場レポートなどは、Udemy Businessとの競争関係が限定的な場合、大きく扱わないでください。
 
 --------------------------------------------
 ■ 日本市場への影響
@@ -790,16 +811,6 @@ japan_market_impact は、以下の場合のみ記入してください。
 - LinkedIn Learning、LinkedIn Career Hub、またはLinkedIn全体に関するニュースを採用する場合
 
 Schoo、Schoo for Business、グロービス学び放題、GLOBISに関するニュースでは、japan_market_impact は空文字にしてください。
-
-日本市場への影響は以下のいずれかにしてください。
-
-- 高
-- 中
-- 低
-- 不明
-
-日本向け提供、日本語対応、日本企業導入、日本市場向け発表が確認できない場合は断定しないでください。
-その場合は「不明」を優先してください。
 
 --------------------------------------------
 ■ 出力形式
@@ -821,8 +832,119 @@ Schoo、Schoo for Business、グロービス学び放題、GLOBISに関するニ
       "evidence_rank": "A / B / C",
       "primary_url": "個別ページURLまたは公式一覧ページURL",
       "date_evidence_url": "日付確認に使ったURL。Aの場合はprimary_urlと同じでよい",
-      "date_evidence": "日付判断の根拠。例：個別ページに2026年5月8日公開と記載 / 公式一覧ページで同タイトルが2026年5月8日公開として掲載 / 検索結果日付のみのためC",
-      "content_evidence": "内容確認の根拠。例：個別ページでAIツール活用を扱う音声コンテンツと確認",
+      "date_evidence": "日付判断の根拠",
+      "content_evidence": "内容確認の根拠",
+      "japanese_availability": "日本語対応あり / 日本語字幕あり / 日本語音声あり / 日本語ページあり / 未確認 / 不要",
+      "japanese_availability_evidence": "日本語対応を確認した根拠。LinkedIn Learning以外では空文字でよい",
+      "source_type": "公式サイト / 公式ブログ / 公式プレスリリース / 公式SNS / IR / 報道機関 / その他",
+      "what_happened": "何が起きたか。事実のみを短く書く",
+      "why_it_matters": "なぜ社内メンバーが気にした方がよいのかを短く書く",
+      "linkedin_scope": "LinkedIn全体 / LinkedIn Learning / LinkedIn Career Hub / 空文字",
+      "competition_with_udemy_business": "強い / 弱い / 不明 / 空文字",
+      "japan_market_impact": "高 / 中 / 低 / 不明 / 空文字",
+      "japan_market_impact_reason": "日本市場への影響判断の根拠。不要な場合は空文字"
+    }
+  ]
+}
+
+候補が0件の場合は、以下を返してください。
+
+{
+  "target_id": "${target.id}",
+  "target_name": "${target.displayName}",
+  "candidates": []
+}
+
+############################################
+JSONのみを出力してください
+############################################
+`;
+}
+
+function buildRecoveryPrompt({
+  target,
+  now,
+  period,
+  periodStartIso,
+  periodEndIso,
+}) {
+  return `
+############################################
+不足ターゲット再探索エージェント
+############################################
+
+あなたは、通常探索で候補が不足した競合について、公式情報を再確認する調査エージェントです。
+
+出力はJSONのみです。
+Markdown、コードブロック、説明文、前置き、後書きは出力しないでください。
+
+--------------------------------------------
+■ 現在情報
+--------------------------------------------
+現在日時: ${now}
+対象期間: ${period}
+対象期間開始: ${periodStartIso}
+対象期間終了: ${periodEndIso}
+
+--------------------------------------------
+■ 再探索対象
+--------------------------------------------
+対象ID: ${target.id}
+対象名: ${target.displayName}
+検索名: ${target.searchName}
+
+--------------------------------------------
+■ 再探索の目的
+--------------------------------------------
+通常探索では、この対象の採用候補が不足しました。
+対象期間内の公式情報を、短く具体的に再確認してください。
+
+このステップでは、以下を重視してください。
+
+${target.recoveryHints.map((hint) => `- ${hint}`).join("\n")}
+
+--------------------------------------------
+■ 重要ルール
+--------------------------------------------
+
+- 対象期間内の可能性がある候補を最大5件まで返す
+- 個別ページURLを primary_url に優先する
+- 個別ページに日付が弱い場合でも、公式一覧ページで同一タイトルと日付を確認できるなら B にする
+- 検索結果の日付だけなら C にする
+- 対象期間外であることが明らかなものは返さない
+- SIGNATEは返さない
+- 推測、噂、未確認情報は返さない
+- 最終採用はJS側で行うため、迷う候補は evidence_rank C として返してよい
+
+${
+  target.requiresJapaneseAvailability
+    ? `
+LinkedIn Learningについては、日本語対応の確認状況を必ず japanese_availability に入れてください。
+日本語対応が確認できなければ「未確認」としてください。
+`
+    : ""
+}
+
+--------------------------------------------
+■ 出力形式
+--------------------------------------------
+
+{
+  "target_id": "${target.id}",
+  "target_name": "${target.displayName}",
+  "candidates": [
+    {
+      "title": "ファクトベースの見出し",
+      "company": "対象企業名",
+      "service": "対象サービス名",
+      "category": "コンテンツの公開 / 新機能の追加 / イベント、ニュース / パートナーシップ / その他",
+      "importance": "高 / 中 / 低",
+      "published_at_utc": "YYYY-MM-DDTHH:mm:ss.sssZ",
+      "evidence_rank": "A / B / C",
+      "primary_url": "個別ページURLまたは公式一覧ページURL",
+      "date_evidence_url": "日付確認に使ったURL",
+      "date_evidence": "日付判断の根拠",
+      "content_evidence": "内容確認の根拠",
       "japanese_availability": "日本語対応あり / 日本語字幕あり / 日本語音声あり / 日本語ページあり / 未確認 / 不要",
       "japanese_availability_evidence": "日本語対応を確認した根拠。LinkedIn Learning以外では空文字でよい",
       "source_type": "公式サイト / 公式ブログ / 公式プレスリリース / 公式SNS / IR / 報道機関 / その他",
@@ -919,15 +1041,6 @@ ${JSON.stringify(verifiedItems, null, 2)}
 本文では、なぜ気になるのか、どの場面で参考になるのかを自然な言葉で説明してください。
 
 --------------------------------------------
-■ 見出しルール
---------------------------------------------
-
-冒頭の見出しは、読者が読み進めたくなる問い・仮説・一言でよいです。
-
-一方で、「今週、気になった競合の動き」に掲載する各ニュースの見出しは、必ずファクトベースにしてください。
-見出しだけを読んでも、何が起きたかが分かるようにしてください。
-
---------------------------------------------
 ■ 各ニュースの構成
 --------------------------------------------
 
@@ -943,6 +1056,10 @@ ${JSON.stringify(verifiedItems, null, 2)}
 - 何が起きたか
 - ここが気になる
 - 出典URL
+
+重要：
+日本語対応状況は、target_id が linkedin_learning の場合のみ表示してください。
+target_id が linkedin_learning ではないニュースでは、日本語対応ラベルを絶対に出さないでください。
 
 1トピックあたりの分量は、180〜260字程度を目安にしてください。
 
@@ -1023,7 +1140,9 @@ HTMLデザインは以下を守ってください。
   <p style="margin:0 0 10px;">本文</p>
 </div>
 
-ラベル色：
+ラベルHTMLの基本形：
+
+<span style="display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; font-weight:bold;">ラベル名</span>
 
 区分ラベル：
 - コンテンツの公開：background:#eef2ff; color:#3730a3;
@@ -1052,10 +1171,6 @@ HTMLデザインは以下を守ってください。
 自社参考ラベル：
 - 自社参考：background:#ede9fe; color:#5b21b6;
 
-ラベルHTMLの基本形：
-
-<span style="display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; font-weight:bold;">ラベル名</span>
-
 --------------------------------------------
 ■ 最終チェック
 --------------------------------------------
@@ -1068,6 +1183,7 @@ HTMLデザインは以下を守ってください。
 - 主要トピックは最大3件に絞っている
 - 各主要トピックにニュース区分と重要度が付いている
 - LinkedIn Learningのコンテンツは、日本語対応が確認できるものだけを掲載している
+- target_id が linkedin_learning ではないニュースに日本語対応ラベルを出していない
 - 事実と解釈が混ざっていない
 - 根拠のない推測を書いていない
 - 情報が少ない場合に無理な示唆を作っていない
@@ -1083,7 +1199,7 @@ HTMLデザインは以下を守ってください。
 
 /**
  * =========================
- * 候補抽出・検証
+ * 候補抽出
  * =========================
  */
 
@@ -1127,6 +1243,52 @@ async function extractCandidatesForTarget({
   return candidates;
 }
 
+async function recoverCandidatesForTarget({
+  target,
+  now,
+  period,
+  periodStartIso,
+  periodEndIso,
+  model,
+}) {
+  const prompt = buildRecoveryPrompt({
+    target,
+    now,
+    period,
+    periodStartIso,
+    periodEndIso,
+  });
+
+  console.log(`\n==============================`);
+  console.log(`Running recovery search for: ${target.displayName}`);
+  console.log(`==============================`);
+
+  const response = await client.responses.create({
+    model,
+    tools: [{ type: "web_search" }],
+    input: prompt,
+  });
+
+  const rawText = response.output_text;
+
+  console.log(`Recovery raw output for ${target.displayName}:`);
+  console.log(rawText);
+
+  const parsed = safeJsonParse(rawText);
+  const candidates = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+
+  console.log(`Recovery parsed candidates for ${target.displayName}: ${candidates.length}`);
+  console.log(JSON.stringify(candidates, null, 2));
+
+  return candidates;
+}
+
+/**
+ * =========================
+ * 検証・選定
+ * =========================
+ */
+
 function validateAndNormalizeAllCandidates({
   candidatesByTarget,
   startDate,
@@ -1142,6 +1304,7 @@ function validateAndNormalizeAllCandidates({
       if (!validation.isValid) {
         const rejectedItem = {
           target: target.displayName,
+          target_id: target.id,
           title: normalizeText(candidate.title),
           company: normalizeText(candidate.company),
           primary_url: normalizeText(candidate.primary_url || candidate.url),
@@ -1187,6 +1350,16 @@ function validateAndNormalizeAllCandidates({
     accepted: sorted,
     rejected,
   };
+}
+
+function getAcceptedCountByTarget(accepted) {
+  const map = new Map();
+
+  for (const item of accepted) {
+    map.set(item.target_id, (map.get(item.target_id) || 0) + 1);
+  }
+
+  return map;
 }
 
 function selectFinalItems(candidates, maxItems = 3) {
@@ -1300,11 +1473,12 @@ async function main() {
   const searchModel =
     process.env.SEARCH_MODEL ||
     process.env.REPORT_MODEL ||
-    "gpt-5.4";
+    "gpt-5.5";
 
   const htmlModel =
     process.env.HTML_MODEL ||
-    "gpt-5.4-mini";
+    process.env.REPORT_MODEL ||
+    "gpt-5.5";
 
   console.log("Weekly competitor report started.");
   console.log(`Search model: ${searchModel}`);
@@ -1315,6 +1489,7 @@ async function main() {
 
   const candidatesByTarget = [];
 
+  // 1. 通常探索
   for (const target of TARGETS) {
     try {
       const candidates = await extractCandidatesForTarget({
@@ -1341,18 +1516,80 @@ async function main() {
     }
   }
 
-  const rawCandidateCount = candidatesByTarget.reduce(
-    (sum, item) => sum + item.candidates.length,
-    0
-  );
-
-  const { accepted, rejected } = validateAndNormalizeAllCandidates({
+  // 2. 通常探索結果をいったん検証
+  let validationResult = validateAndNormalizeAllCandidates({
     candidatesByTarget,
     startDate,
     endDate: nowDate,
   });
 
+  let acceptedCountByTarget = getAcceptedCountByTarget(validationResult.accepted);
+
+  // 3. 重要ターゲットが採用候補0件なら再探索
+  const recoveryCandidatesByTarget = [];
+
+  for (const target of TARGETS) {
+    if (!REQUIRED_RECOVERY_TARGET_IDS.includes(target.id)) {
+      continue;
+    }
+
+    const acceptedCount = acceptedCountByTarget.get(target.id) || 0;
+
+    if (acceptedCount > 0) {
+      continue;
+    }
+
+    try {
+      const recoveryCandidates = await recoverCandidatesForTarget({
+        target,
+        now,
+        period,
+        periodStartIso,
+        periodEndIso,
+        model: searchModel,
+      });
+
+      recoveryCandidatesByTarget.push({
+        target,
+        candidates: recoveryCandidates,
+      });
+    } catch (error) {
+      console.error(`Failed to recover candidates for ${target.displayName}`);
+      console.error(error);
+    }
+  }
+
+  // 4. 再探索候補があれば、通常候補に足して再検証
+  const allCandidatesByTarget = [...candidatesByTarget];
+
+  for (const recovered of recoveryCandidatesByTarget) {
+    const existing = allCandidatesByTarget.find(
+      (item) => item.target.id === recovered.target.id
+    );
+
+    if (existing) {
+      existing.candidates = [...existing.candidates, ...recovered.candidates];
+    } else {
+      allCandidatesByTarget.push(recovered);
+    }
+  }
+
+  validationResult = validateAndNormalizeAllCandidates({
+    candidatesByTarget: allCandidatesByTarget,
+    startDate,
+    endDate: nowDate,
+  });
+
+  const rawCandidateCount = allCandidatesByTarget.reduce(
+    (sum, item) => sum + item.candidates.length,
+    0
+  );
+
+  const accepted = validationResult.accepted;
+  const rejected = validationResult.rejected;
+
   const verifiedItems = selectFinalItems(accepted, 3);
+  const safeVerifiedItems = sanitizeItemsForHtml(verifiedItems);
 
   console.log("\n==============================");
   console.log("Candidate summary");
@@ -1360,7 +1597,8 @@ async function main() {
   console.log(`Raw candidates: ${rawCandidateCount}`);
   console.log(`Accepted candidates: ${accepted.length}`);
   console.log(`Rejected candidates: ${rejected.length}`);
-  console.log(`Final selected items: ${verifiedItems.length}`);
+  console.log(`Recovery target count: ${recoveryCandidatesByTarget.length}`);
+  console.log(`Final selected items: ${safeVerifiedItems.length}`);
 
   console.log("\nAccepted candidates:");
   console.log(JSON.stringify(accepted, null, 2));
@@ -1369,7 +1607,7 @@ async function main() {
   console.log(JSON.stringify(rejected, null, 2));
 
   console.log("\nFinal selected items:");
-  console.log(JSON.stringify(verifiedItems, null, 2));
+  console.log(JSON.stringify(safeVerifiedItems, null, 2));
 
   if (rawCandidateCount > 0 && accepted.length === 0) {
     console.warn(
@@ -1386,7 +1624,7 @@ async function main() {
   const htmlPrompt = buildHtmlPrompt({
     now,
     period,
-    verifiedItems,
+    verifiedItems: safeVerifiedItems,
   });
 
   const htmlResponse = await client.responses.create({
