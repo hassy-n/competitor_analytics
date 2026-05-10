@@ -319,6 +319,43 @@ function evidenceScore(value) {
   return 1;
 }
 
+function finalSelectionScore(item) {
+  let score = 0;
+
+  // 根拠の強さを重視
+  score += evidenceScore(item.evidence_rank) * 10;
+
+  // 重要度を重視
+  score += importanceScore(item.importance) * 5;
+
+  // 新機能・提携はコンテンツ公開より優先
+  if (item.category === "新機能の追加") score += 8;
+  if (item.category === "パートナーシップ") score += 8;
+  if (item.category === "イベント、ニュース") score += 3;
+  if (item.category === "その他") score += 1;
+
+  // 低重要度のコンテンツ公開は、他候補がある場合に後ろへ回す
+  if (item.category === "コンテンツの公開" && item.importance === "低") {
+    score -= 6;
+  }
+
+  // 個別URL・望ましいURLに合っているものを少し優先
+  if (item.preferred_url_matched) {
+    score += 2;
+  }
+
+  // LinkedIn Learningで日本語対応が確認できているものは少し加点
+  if (
+    item.target_id === "linkedin_learning" &&
+    item.japanese_availability &&
+    item.japanese_availability !== "未確認"
+  ) {
+    score += 3;
+  }
+
+  return score;
+}
+
 function dedupeCandidates(candidates) {
   const seen = new Set();
   const result = [];
@@ -1130,19 +1167,94 @@ function validateAndNormalizeAllCandidates({
 }
 
 function selectFinalItems(candidates, maxItems = 3) {
-  const competitorItems = candidates.filter(
-    (item) => item.competitor_type === "competitor"
-  );
+  const competitorItems = candidates
+    .filter((item) => item.competitor_type === "competitor")
+    .sort((a, b) => {
+      const scoreDiff = finalSelectionScore(b) - finalSelectionScore(a);
+      if (scoreDiff !== 0) return scoreDiff;
 
-  const selfReferenceItems = candidates.filter(
-    (item) => item.competitor_type === "self_reference"
-  );
+      return new Date(b.published_at_utc) - new Date(a.published_at_utc);
+    });
 
-  if (competitorItems.length >= maxItems) {
-    return competitorItems.slice(0, maxItems);
+  const selfReferenceItems = candidates
+    .filter((item) => item.competitor_type === "self_reference")
+    .sort((a, b) => {
+      const scoreDiff = finalSelectionScore(b) - finalSelectionScore(a);
+      if (scoreDiff !== 0) return scoreDiff;
+
+      return new Date(b.published_at_utc) - new Date(a.published_at_utc);
+    });
+
+  const selected = [];
+  const countByTarget = new Map();
+
+  function alreadySelected(item) {
+    return selected.some(
+      (selectedItem) =>
+        selectedItem.primary_url === item.primary_url ||
+        selectedItem.title === item.title
+    );
   }
 
-  return [...competitorItems, ...selfReferenceItems].slice(0, maxItems);
+  function addItem(item) {
+    selected.push(item);
+    countByTarget.set(
+      item.target_id,
+      (countByTarget.get(item.target_id) || 0) + 1
+    );
+  }
+
+  // 1巡目：各競合から最上位1件ずつ選ぶ
+  for (const item of competitorItems) {
+    if (selected.length >= maxItems) return selected;
+    if (alreadySelected(item)) continue;
+
+    const currentCount = countByTarget.get(item.target_id) || 0;
+
+    if (currentCount === 0) {
+      addItem(item);
+    }
+  }
+
+  // 2巡目：枠が余る場合のみ、同一競合の2件目を許可
+  // ただし、低重要度のコンテンツ公開は後回し
+  const secondRoundItems = competitorItems.filter(
+    (item) =>
+      !(item.category === "コンテンツの公開" && item.importance === "低")
+  );
+
+  for (const item of secondRoundItems) {
+    if (selected.length >= maxItems) return selected;
+    if (alreadySelected(item)) continue;
+
+    const currentCount = countByTarget.get(item.target_id) || 0;
+
+    if (currentCount < 2) {
+      addItem(item);
+    }
+  }
+
+  // 3巡目：それでも枠が余る場合のみ、低重要度のコンテンツ公開も許可
+  for (const item of competitorItems) {
+    if (selected.length >= maxItems) return selected;
+    if (alreadySelected(item)) continue;
+
+    const currentCount = countByTarget.get(item.target_id) || 0;
+
+    if (currentCount < 2) {
+      addItem(item);
+    }
+  }
+
+  // 4巡目：競合候補が少ない場合のみ、自社参考を追加
+  for (const item of selfReferenceItems) {
+    if (selected.length >= maxItems) return selected;
+    if (alreadySelected(item)) continue;
+
+    addItem(item);
+  }
+
+  return selected;
 }
 
 /**
