@@ -1,8 +1,6 @@
 name: Weekly Competitor Report
 
 on:
-  schedule:
-    - cron: "17 0 * * 1" # UTC 00:17 = JST 09:17 月曜
   workflow_dispatch:
 
 jobs:
