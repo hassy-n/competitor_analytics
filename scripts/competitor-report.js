@@ -15,24 +15,28 @@ const TARGETS = [
   {
     id: "linkedin_learning",
     displayName: "LinkedIn Learning",
-    searchName: "LinkedIn Learning",
+    searchName: "LinkedIn Learning 日本語 Japanese",
     competitorType: "competitor",
     searchScope:
-      "LinkedIn Learning公式コース、公式ブログ、公式ニュース、公式コース一覧、AI・スキル・法人学習に関係する更新",
+      "LinkedIn Learning公式コース、公式コース一覧、LinkedIn Learningの日本語対応コース、日本語字幕・日本語音声・日本語ページが確認できるAI・スキル・法人学習に関係する更新",
     adoptionScope:
-      "法人向け学習、企業研修、AI人材育成、スキル可視化、キャリア支援、リスキリングに示唆があるもの",
+      "法人向け学習、企業研修、AI人材育成、スキル可視化、キャリア支援、リスキリングに示唆があり、かつ日本語対応が確認できるもの",
     preferredUrlPatterns: [
       "linkedin.com/learning/",
       "linkedin.com/business/learning/",
       "ad.linkedin.com/learning/",
     ],
     sourceHints: [
-      "LinkedIn Learning official courses",
-      "LinkedIn Learning official blog",
-      "LinkedIn Learning AI courses",
-      "LinkedIn Learning skills courses",
-      "LinkedIn Learning business learning",
+      "LinkedIn Learning 日本語 AI コース",
+      "LinkedIn Learning Japanese AI courses",
+      "LinkedIn Learning 日本語字幕 AI",
+      "LinkedIn Learning 日本語音声 AI",
+      "LinkedIn Learning 日本語 ビジネススキル",
+      "LinkedIn Learning Japanese business skills",
+      "site:linkedin.com/learning 日本語 LinkedIn Learning AI",
+      "site:linkedin.com/learning Japanese LinkedIn Learning AI",
     ],
+    requiresJapaneseAvailability: true,
   },
   {
     id: "linkedin_career_hub",
@@ -54,6 +58,7 @@ const TARGETS = [
       "LinkedIn Career Hub learning",
       "LinkedIn Career Hub workforce",
     ],
+    requiresJapaneseAvailability: false,
   },
   {
     id: "schoo",
@@ -79,6 +84,7 @@ const TARGETS = [
       "Schoo for Business official",
       "site:schoo.jp/news Schoo 2026年5月",
     ],
+    requiresJapaneseAvailability: false,
   },
   {
     id: "globis",
@@ -105,6 +111,7 @@ const TARGETS = [
       "GLOBIS AI 2026年5月",
       "site:globis.jp/courses 2026年5月 AI",
     ],
+    requiresJapaneseAvailability: false,
   },
   {
     id: "udemy_business",
@@ -125,6 +132,7 @@ const TARGETS = [
       "Udemy Business blog",
       "Udemy Business product update",
     ],
+    requiresJapaneseAvailability: false,
   },
 ];
 
@@ -140,6 +148,13 @@ const CATEGORY_LIST = [
 
 const IMPORTANCE_LIST = ["高", "中", "低"];
 const EVIDENCE_RANK_LIST = ["A", "B", "C"];
+
+const VALID_JAPANESE_AVAILABILITY = [
+  "日本語対応あり",
+  "日本語字幕あり",
+  "日本語音声あり",
+  "日本語ページあり",
+];
 
 /**
  * =========================
@@ -273,6 +288,16 @@ function normalizeEvidenceRank(rank) {
   return EVIDENCE_RANK_LIST.includes(value) ? value : "C";
 }
 
+function normalizeJapaneseAvailability(value, target) {
+  const normalized = normalizeText(value);
+
+  if (!target.requiresJapaneseAvailability) {
+    return normalized || "不要";
+  }
+
+  return normalized || "未確認";
+}
+
 function shouldExcludeCompany(value) {
   const text = normalizeText(value).toLowerCase();
   return EXCLUDED_COMPANIES.some((excluded) =>
@@ -324,6 +349,15 @@ function validateCandidate(item, target, startDate, endDate) {
   const publishedAtUtc = normalizeText(item.published_at_utc);
   const evidenceRank = normalizeEvidenceRank(item.evidence_rank);
 
+  const japaneseAvailability = normalizeJapaneseAvailability(
+    item.japanese_availability,
+    target
+  );
+
+  const japaneseAvailabilityEvidence = normalizeText(
+    item.japanese_availability_evidence
+  );
+
   if (!title) rejectReasons.push("missing title");
   if (!company) rejectReasons.push("missing company");
   if (!primaryUrl) rejectReasons.push("missing primary_url");
@@ -357,6 +391,20 @@ function validateCandidate(item, target, startDate, endDate) {
     rejectReasons.push("weak primary_url");
   }
 
+  /**
+   * LinkedIn Learning専用：
+   * 日本語対応が確認できるコンテンツだけを採用する。
+   */
+  if (target.requiresJapaneseAvailability) {
+    if (!VALID_JAPANESE_AVAILABILITY.includes(japaneseAvailability)) {
+      rejectReasons.push("missing Japanese availability");
+    }
+
+    if (!japaneseAvailabilityEvidence) {
+      rejectReasons.push("missing Japanese availability evidence");
+    }
+  }
+
   return {
     isValid: rejectReasons.length === 0,
     rejectReasons,
@@ -383,6 +431,13 @@ function normalizeCandidate(item, target) {
     date_evidence_url: dateEvidenceUrl,
     date_evidence: normalizeText(item.date_evidence),
     content_evidence: normalizeText(item.content_evidence),
+    japanese_availability: normalizeJapaneseAvailability(
+      item.japanese_availability,
+      target
+    ),
+    japanese_availability_evidence: normalizeText(
+      item.japanese_availability_evidence
+    ),
     source_type: normalizeText(item.source_type || "不明"),
     what_happened: normalizeText(item.what_happened),
     why_it_matters: normalizeText(item.why_it_matters),
@@ -461,8 +516,48 @@ ${target.adoptionScope}
 
 重要：
 探索は広く、採用は上記の業務示唆で絞ってください。
-たとえば、Schooの場合はSchoo for Business専用ニュースでなくても、法人向け学習・企業研修・スキル習得・思考整理・マネジメント・DX・AI・人材育成に示唆があれば候補に含めてください。
+Schooの場合はSchoo for Business専用ニュースでなくても、法人向け学習・企業研修・スキル習得・思考整理・マネジメント・DX・AI・人材育成に示唆があれば候補に含めてください。
 GLOBISの場合も、グロービス学び放題専用ニュースでなくても、GLOBIS公式のコース・知見録・新着コンテンツで法人向け学習に示唆があれば候補に含めてください。
+
+${
+  target.requiresJapaneseAvailability
+    ? `
+--------------------------------------------
+■ LinkedIn Learningの日本語対応条件
+--------------------------------------------
+
+この対象は LinkedIn Learning です。
+
+LinkedIn Learningのコースやコンテンツを候補にする場合は、日本語対応が確認できるものだけを候補にしてください。
+
+採用できる条件：
+- 日本語字幕が確認できる
+- 日本語音声が確認できる
+- 日本語ページとして確認できる
+- 日本語対応、Japanese、Japanese subtitles などの記載が確認できる
+- 日本語で受講可能と判断できる公式情報がある
+
+採用してはいけない条件：
+- 英語のみのコース
+- 日本語対応が確認できないコース
+- グローバルの英語コース一覧に掲載されているだけのコース
+- 日本語対応の根拠が検索結果や推測だけのコース
+
+候補に含める場合は、japanese_availability と japanese_availability_evidence を必ず記入してください。
+
+japanese_availability は以下のいずれかにしてください。
+
+- 日本語対応あり
+- 日本語字幕あり
+- 日本語音声あり
+- 日本語ページあり
+- 未確認
+
+日本語対応が確認できない場合は、どれほどAI・スキル・法人学習に関係していても候補から除外してください。
+候補として出す場合でも、日本語対応が未確認なら japanese_availability は「未確認」にしてください。
+`
+    : ""
+}
 
 --------------------------------------------
 ■ 優先URLパターン
@@ -502,6 +597,10 @@ ${target.sourceHints.map((hint) => `- ${hint}`).join("\n")}
 - 生成AI
 - マネジメント
 - DX
+- 日本語
+- Japanese
+- 日本語字幕
+- Japanese subtitles
 
 --------------------------------------------
 ■ 候補抽出の考え方
@@ -520,6 +619,7 @@ ${target.sourceHints.map((hint) => `- ${hint}`).join("\n")}
 - 推測、噂、未確認情報
 - SIGNATEに関する情報
 - 対象名が含まれるだけで、法人向け学習・人材育成・スキル・キャリア・企業研修との関係が薄い情報
+- LinkedIn Learningにおいて、日本語対応が確認できない英語のみのコース
 
 --------------------------------------------
 ■ 根拠ランク
@@ -663,6 +763,8 @@ Schoo、Schoo for Business、グロービス学び放題、GLOBISに関するニ
       "date_evidence_url": "日付確認に使ったURL。Aの場合はprimary_urlと同じでよい",
       "date_evidence": "日付判断の根拠。例：個別ページに2026年5月8日公開と記載 / 公式一覧ページで同タイトルが2026年5月8日公開として掲載",
       "content_evidence": "内容確認の根拠。例：個別ページでAIツール活用を扱う音声コンテンツと確認",
+      "japanese_availability": "日本語対応あり / 日本語字幕あり / 日本語音声あり / 日本語ページあり / 未確認 / 不要",
+      "japanese_availability_evidence": "日本語対応を確認した根拠。LinkedIn Learning以外では空文字でよい",
       "source_type": "公式サイト / 公式ブログ / 公式プレスリリース / 公式SNS / IR / 報道機関 / その他",
       "what_happened": "何が起きたか。事実のみを短く書く",
       "why_it_matters": "なぜ社内メンバーが気にした方がよいのかを短く書く",
@@ -777,6 +879,7 @@ ${JSON.stringify(verifiedItems, null, 2)}
 - 重要度
 - 発表日時：YYYY-MM-DD HH:MM（UTC）
 - LinkedIn関連ニュースの場合のみ：日本市場への影響
+- LinkedIn Learningのコンテンツの場合のみ：日本語対応状況
 - 何が起きたか
 - ここが気になる
 - 出典URL
@@ -880,6 +983,12 @@ HTMLデザインは以下を守ってください。
 - 日本影響：低：background:#e5e7eb; color:#374151;
 - 日本影響：不明：background:#dbeafe; color:#1e40af;
 
+日本語対応ラベル：
+- 日本語対応あり：background:#dcfce7; color:#166534;
+- 日本語字幕あり：background:#dcfce7; color:#166534;
+- 日本語音声あり：background:#dcfce7; color:#166534;
+- 日本語ページあり：background:#dcfce7; color:#166534;
+
 自社参考ラベル：
 - 自社参考：background:#ede9fe; color:#5b21b6;
 
@@ -898,6 +1007,7 @@ HTMLデザインは以下を守ってください。
 - 古いニュースで情報量を増やしていない
 - 主要トピックは最大3件に絞っている
 - 各主要トピックにニュース区分と重要度が付いている
+- LinkedIn Learningのコンテンツは、日本語対応が確認できるものだけを掲載している
 - 事実と解釈が混ざっていない
 - 根拠のない推測を書いていない
 - 情報が少ない場合に無理な示唆を作っていない
@@ -978,6 +1088,10 @@ function validateAndNormalizeAllCandidates({
           date_evidence_url: normalizeText(candidate.date_evidence_url),
           published_at_utc: normalizeText(candidate.published_at_utc),
           evidence_rank: normalizeText(candidate.evidence_rank),
+          japanese_availability: normalizeText(candidate.japanese_availability),
+          japanese_availability_evidence: normalizeText(
+            candidate.japanese_availability_evidence
+          ),
           reject_reasons: validation.rejectReasons,
         };
 
